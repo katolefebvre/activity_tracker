@@ -1,7 +1,6 @@
 # activity_tracker.py
 
 import os
-import asyncio
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 import logging
@@ -54,22 +53,10 @@ async def get_notion_pages(arg: str) -> List[dict]:
             **{
                 "database_id": DATABASE_ID,
                 "filter": {
-                    "and": [
-                        {
-                            "property": "owner",
-                            "select": {
-                                "equals": arg
-                            }
-                        },
-                    ]
+                    "and": [ { "property": "owner", "select": { "equals": arg } }, ]
                 },
-                "sorts": [
-                    {
-                        "property": "Name",
-                        "direction": "ascending"
-                    }
-                ]
-            }
+                "sorts": [ { "property": "Name", "direction": "ascending" } ]
+            } 
         ).get("results")
         last_checked = datetime.utcnow().replace(microsecond=0).isoformat()
         logger.info(f"Last checked at: {last_checked}")
@@ -109,9 +96,7 @@ async def on_message(message):
 
 @bot.command(name="ac")
 async def check_activity(text, *args):
-    await text.send(f'# ACTIVITY CHECK - 
-                    {start_date.strftime("%b").upper()} {start_date.strftime("%d")} 
-                    TO {end_date.strftime("%b").upper()} {end_date.strftime("%d")}')
+    await text.send(f'# ACTIVITY CHECK - {start_date.strftime("%b").upper()} {start_date.strftime("%d")} TO {end_date.strftime("%b").upper()} {end_date.strftime("%d")}')
     
     if not args:
         args = ['kato', 'eren', 'dust', 'katie']
@@ -128,16 +113,84 @@ async def check_activity(text, *args):
             for page in pages:
                 message = format_page_message(page)
                 response.add_field(
-                    name = '',
-                    value = message,
-                    inline = False
-                )
+                    name    = '', 
+                    value   = message, 
+                    inline  = False)
             try:
                 await text.send(embed = response)
             except Exception as e:
                 logger.error(f"Error sending message to Discord: {e}")
         except Exception as e:
             logger.error(f"Error polling Notion database: {e}")
+
+@bot.command(name="add")
+async def add_activity(text, name, character):
+    activity_date = datetime.now()
+    activity_date_str = f"{activity_date.strftime('%Y')}-{activity_date.strftime('%m')}-{activity_date.strftime('%d')}"
+    
+    response = discord.Embed(
+        title       = f"{name.upper()}",
+        description = '',
+        color       = discord.Color.green()
+    )
+    
+    count = 0
+
+    try:
+        pages = await get_notion_pages(name.lower())
+        for page in pages:
+            if page["properties"]["Name"]["title"][0]["text"]["content"].lower() == character.lower():
+                if page["properties"]["completed"]["formula"]["string"] == "COMPLETE":
+                    response.add_field(
+                        name    = 'ACTIVITY COMPLETE', 
+                        value   = f'Activity for **{character.upper()}** has already been completed.', 
+                        inline  = False)
+                    break
+                for x in range(1, 11):
+                    count += 1
+                    
+                    if page["properties"][f"day {x}"]["date"] is None:
+                        properties = { f"day {x}": { "date": { "start": activity_date_str } } }
+                        notion.pages.update(page_id=page["id"], properties=properties)
+                        
+                        response.add_field(
+                            name    = 'ACTIVITY ADDED', 
+                            value   = f'Activity for **{character.upper()}** has been created.', 
+                            inline  = False)
+                        
+                        if count == 10:
+                            response.add_field(
+                                name    = 'ACTIVITY COMPLETE', 
+                                value   = f'Congratulations! Activity for **{character.upper()}** has been completed for this check.', 
+                                inline  = False)
+                        else:
+                            response.add_field(
+                                name    = '', 
+                                value   = f'Current Progress: {count} / 10', 
+                                inline  = False)
+                        break
+                    elif page["properties"][f"day {x}"]["date"]["start"] == activity_date_str:
+                        response.color = discord.Color.red()
+                        response.add_field(
+                            name    = 'ACTIVITY ALREADY UPDATED', 
+                            value   = f'Activity for **{character.upper()}** has already been updated for today.', 
+                            inline  = False)
+                        break
+                    
+        
+    except Exception as e:
+        response.color = discord.Color.red()
+        response.add_field(
+            name    = 'ERROR', 
+            value   = f"Error adding activity: {e}", 
+            inline  = False)
+        logger.error(f"Error adding activity: {e}")
+        
+    await text.send(embed = response)
+    
+@bot.command(name="link")
+async def post_link(text):
+    await text.send("**NOTION LINK:** https://barley-bear.notion.site/2250c04bcbee4f1bbfb48de2ab02e7c7?v=455023601c2947088eed1730da68b834")
 
 if __name__ == "__main__":
     bot.run(DISCORD_BOT_TOKEN)
