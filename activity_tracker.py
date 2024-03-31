@@ -176,8 +176,6 @@ async def add_activity(text, name, character):
                             value   = f'Activity for **{character.upper()}** has already been updated for today.', 
                             inline  = False)
                         break
-                    
-        
     except Exception as e:
         response.color = discord.Color.red()
         response.add_field(
@@ -186,6 +184,86 @@ async def add_activity(text, name, character):
             inline  = False)
         logger.error(f"Error adding activity: {e}")
         
+    await text.send(embed = response)
+    
+@bot.command(name="edit")
+async def edit_character(text, name, old_chara, new_chara):
+    response = discord.Embed(
+        title       = f"{old_chara.upper()}",
+        description = '',
+        color       = discord.Color.green()
+    )
+
+    try:
+        pages = await get_notion_pages(name.lower())
+        for page in pages:
+            if page["properties"]["Name"]["title"][0]["text"]["content"].lower() == old_chara.lower():
+                properties = { "Name": { "title": [ { "text": { "content": new_chara.lower() } } ] } }
+                notion.pages.update(page_id=page["id"], properties=properties)
+                
+                response.add_field(
+                    name    = 'CHARACTER UPDATED', 
+                    value   = f'Character name {old_chara.upper()} has been updated to {new_chara.upper()}.', 
+                    inline  = False)
+    except Exception as e:
+        response.color = discord.Color.red()
+        response.add_field(
+            name    = 'ERROR', 
+            value   = f"Error editing character: {e}", 
+            inline  = False)
+        logger.error(f"Error editing character: {e}")
+        
+    await text.send(embed = response)
+    
+@bot.command(name="new")
+async def new_character(text, name, character, vocatum):
+    response = discord.Embed(
+        title       = f"{name.upper()}",
+        description = '',
+        color       = discord.Color.green()
+    )
+    
+    try:
+        notion.pages.create(
+            **{
+            "parent": {
+                "database_id": DATABASE_ID,
+            },
+            "properties": {
+                "Name": { 
+                    "title": [ { 
+                        "text": { 
+                            "content": character.lower() 
+                        } 
+                    } ] 
+                },
+                "owner": {
+                    "type": "select",
+                    "select": {
+                        "name": name.lower()
+                    }
+                },
+                "vocatum": {
+                    "type": "select",
+                    "select": {
+                        "name": vocatum.lower()
+                    }
+                }
+            }
+        })
+        
+        response.add_field(
+            name    = 'CHARACTER CREATED', 
+            value   = f'Character {character.upper()} has been created for {name.upper()}.', 
+            inline  = False)
+    except Exception as e:
+        response.color = discord.Color.red()
+        response.add_field(
+            name    = 'ERROR', 
+            value   = f"Error creating new character: {e}", 
+            inline  = False)
+        logger.error(f"Error creating new character: {e}")
+    
     await text.send(embed = response)
     
 @bot.command(name="link")
