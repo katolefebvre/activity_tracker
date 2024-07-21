@@ -3,6 +3,7 @@
 import os
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
+from pytz import timezone
 import logging
 from typing import List
 
@@ -40,11 +41,12 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 # Initialize the Notion client
 notion = Client(auth=NOTION_API_KEY)
 
-# Store the last checked timestamp
-last_checked = datetime.now().replace(microsecond=0).isoformat()
+utc = timezone('UTC')
+tz = timezone('America/Toronto')
 
-start_date = datetime(2024,2,5)
-end_date = datetime(2024,4,5)
+# Store Activity Check dates
+start_date = datetime(2024,6,5)
+end_date = datetime(2024,8,5)
 
 async def get_notion_pages(arg: str) -> List[dict]:
     global last_checked
@@ -58,14 +60,13 @@ async def get_notion_pages(arg: str) -> List[dict]:
                 "sorts": [ { "property": "Name", "direction": "ascending" } ]
             } 
         ).get("results")
-        last_checked = datetime.utcnow().replace(microsecond=0).isoformat()
+        last_checked = datetime.now(tz)
         logger.info(f"Last checked at: {last_checked}")
         logger.debug(pages)
         return pages
     except Exception as e:
         logger.error(f"Error fetching pages from Notion: {e}")
         return []
-
 
 def format_page_message(page: dict) -> str:
     count = 0
@@ -96,15 +97,13 @@ async def on_message(message):
 
 @bot.command(name="ac")
 async def check_activity(text, *args):
-    await text.send(f'# ACTIVITY CHECK - {start_date.strftime("%b").upper()} {start_date.strftime("%d")} TO {end_date.strftime("%b").upper()} {end_date.strftime("%d")}')
-    
     if not args:
         args = ['kato', 'eren', 'dust', 'katie']
     
     for arg in args:
         try:
             response = discord.Embed(
-                title       = f"{arg.upper()}",
+                title       = f"{arg.upper()} - {start_date.strftime("%b").upper()} {start_date.strftime("%d")} TO {end_date.strftime("%b").upper()} {end_date.strftime("%d")}",
                 description = '',
                 color       = discord.Color.blue()
             )
@@ -125,7 +124,7 @@ async def check_activity(text, *args):
 
 @bot.command(name="add")
 async def add_activity(text, name, character):
-    activity_date = datetime.now()
+    activity_date = datetime.now(tz)
     activity_date_str = f"{activity_date.strftime('%Y')}-{activity_date.strftime('%m')}-{activity_date.strftime('%d')}"
     
     response = discord.Embed(
@@ -168,6 +167,9 @@ async def add_activity(text, name, character):
                                 name    = '', 
                                 value   = f'Current Progress: {count} / 10', 
                                 inline  = False)
+
+                        logger.info(f"Activity for {character.upper()} created")
+
                         break
                     elif page["properties"][f"day {x}"]["date"]["start"] == activity_date_str:
                         response.color = discord.Color.red()
@@ -205,6 +207,8 @@ async def edit_character(text, name, old_chara, new_chara):
                     name    = 'CHARACTER UPDATED', 
                     value   = f'Character name {old_chara.upper()} has been updated to {new_chara.upper()}.', 
                     inline  = False)
+
+                logger.info(f"{character.upper()} updated")
     except Exception as e:
         response.color = discord.Color.red()
         response.add_field(
@@ -256,6 +260,8 @@ async def new_character(text, name, character, vocatum):
             name    = 'CHARACTER CREATED', 
             value   = f'Character {character.upper()} has been created for {name.upper()}.', 
             inline  = False)
+
+        logger.info(f"{character.upper()} created")
     except Exception as e:
         response.color = discord.Color.red()
         response.add_field(
@@ -265,6 +271,67 @@ async def new_character(text, name, character, vocatum):
         logger.error(f"Error creating new character: {e}")
     
     await text.send(embed = response)
+
+@bot.command(name="drop")
+async def drop_character(text, name, character):
+    response = discord.Embed(
+        title       = f"{name.upper()}",
+        description = '',
+        color       = discord.Color.blue()
+    )
+
+    try:
+        pages = await get_notion_pages(name.lower())
+        for page in pages:
+            if page["properties"]["Name"]["title"][0]["text"]["content"].lower() == character.lower():
+                notion.blocks.delete(block_id=page["id"])
+                
+                response.add_field(
+                    name    = 'CHARACTER DROPPED', 
+                    value   = f'Character name {character.upper()} has been dropped.', 
+                    inline  = False)
+
+                logger.info(f"{character.upper()} dropped")
+    except Exception as e:
+        response.color = discord.Color.red()
+        response.add_field(
+            name    = 'ERROR', 
+            value   = f"Error dropping character: {e}", 
+            inline  = False)
+        logger.error(f"Error dropping character: {e}")
+        
+    await text.send(embed = response)
+
+@bot.command(name="clear")
+async def clear_activity(text, *args):
+    if not args:
+        args = ['kato', 'eren', 'dust', 'katie']
+        
+    for arg in args:
+        try:
+            pages = await get_notion_pages(arg.lower())
+            for page in pages:
+                try:
+                    properties = {
+                        "day 1": { "date": None },
+                        "day 2": { "date": None },
+                        "day 3": { "date": None },
+                        "day 4": { "date": None },
+                        "day 5": { "date": None },
+                        "day 6": { "date": None },
+                        "day 7": { "date": None },
+                        "day 8": { "date": None },
+                        "day 9": { "date": None },
+                        "day 10": { "date": None },
+                    }
+                    notion.pages.update(page_id=page["id"], properties=properties)
+                    logger.info("Activity cleared")
+                except Exception as e:
+                    logger.error(f"Error clearing activity: {e}")
+        except Exception as e:
+            logger.error(f"Error polling Notion database: {e}")
+        
+    await text.send("Activity has been cleared.")
     
 @bot.command(name="link")
 async def post_link(text):
